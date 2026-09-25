@@ -4,9 +4,21 @@
     const cvs = document.getElementById("gameCanvas");
     const ctx = cvs.getContext("2d");
 
-    // Широкое комфортное разрешение для ПК и мобилок
-    cvs.width = 1280;
-    cvs.height = 720;
+    // Определяем устройство и подстраиваем формат (ПК -> 16:9, Телефон -> 9:16)
+    let isMobile = window.innerWidth < window.innerHeight;
+
+    function setupResolution() {
+        isMobile = window.innerWidth < window.innerHeight;
+        if (isMobile) {
+            cvs.width = 720;   // Вертикальный формат 9:16 для мобилок
+            cvs.height = 1280;
+        } else {
+            cvs.width = 1280;  // Горизонтальный формат 16:9 для ПК
+            cvs.height = 720;
+        }
+    }
+    setupResolution();
+    window.addEventListener('resize', setupResolution);
 
     const birdImg = new Image();
     birdImg.src = "image_3.png";
@@ -58,13 +70,29 @@
     });
 
     const bird = {
-        x: 250,
-        y: cvs.height / 2,
-        w: 75,
-        h: 75,
-        gravity: 0.22,   // Очень мягкое, плавное падение
-        jump: -7.2,    // Комфортный, высокий прыжок с одного клика
+        x: 0,
+        y: 0,
+        w: 0,
+        h: 0,
+        gravity: 0.22,
+        jump: -7.2,
         speed: 0,
+
+        initDimensions: function() {
+            if (isMobile) {
+                this.x = 150;
+                this.w = 90;
+                this.h = 90;
+                this.gravity = 0.32; // Чуть бодрее на телефоне
+                this.jump = -8.5;
+            } else {
+                this.x = 250;
+                this.w = 75;
+                this.h = 75;
+                this.gravity = 0.22; // Плавнее на ПК
+                this.jump = -7.2;
+            }
+        },
 
         draw: function() {
             ctx.save();
@@ -100,27 +128,30 @@
         },
 
         flap: function() {
-            this.speed = this.jump; // Мгновенный отклик на клик
+            this.speed = this.jump;
         }
     };
 
+    // Инициализируем размеры птицы при старте
+    bird.initDimensions();
+
     const pipes = {
         position: [],
-        w: 110,        // Ширина труб
-        gap: 260,      // Большой и удобный проход между трубами
-        dx: 2.5,       // Медленная, размеренная скорость движения игры
-
+        
         draw: function() {
+            let pW = isMobile ? 130 : 110;
+            let gapSize = isMobile ? 320 : 260;
+
             for(let i = 0; i < this.position.length; i++) {
                 let p = this.position[i];
                 
                 if(pipeImg.complete && pipeImg.naturalHeight !== 0) {
-                    ctx.drawImage(pipeImg, p.x, 0, this.w, p.top);
-                    ctx.drawImage(pipeImg, p.x, p.top + this.gap, this.w, cvs.height - (p.top + this.gap));
+                    ctx.drawImage(pipeImg, p.x, 0, pW, p.top);
+                    ctx.drawImage(pipeImg, p.x, p.top + gapSize, pW, cvs.height - (p.top + gapSize));
                 } else {
                     ctx.fillStyle = "#e74c3c";
-                    ctx.fillRect(p.x, 0, this.w, p.top);
-                    ctx.fillRect(p.x, p.top + this.gap, this.w, cvs.height - (p.top + this.gap));
+                    ctx.fillRect(p.x, 0, pW, p.top);
+                    ctx.fillRect(p.x, p.top + gapSize, pW, cvs.height - (p.top + gapSize));
                 }
             }
         },
@@ -128,10 +159,14 @@
         update: function() {
             if(state.current !== state.game) return;
 
-            // Трубы появляются реже, чтобы было время спокойно реагировать
-            if(frames % 170 === 0) {
+            let pW = isMobile ? 130 : 110;
+            let gapSize = isMobile ? 320 : 260;
+            let speedDx = isMobile ? 4.2 : 2.5; // На мобилке скорость выше, чтобы не было скучно
+            let spawnInterval = isMobile ? 100 : 170;
+
+            if(frames % spawnInterval === 0) {
                 let minTop = 80;
-                let maxTop = cvs.height - this.gap - 100;
+                let maxTop = cvs.height - gapSize - 100;
                 let randomTop = Math.floor(Math.random() * (maxTop - minTop + 1)) + minTop;
 
                 this.position.push({
@@ -142,16 +177,16 @@
 
             for(let i = 0; i < this.position.length; i++) {
                 let p = this.position[i];
-                p.x -= this.dx;
+                p.x -= speedDx;
                 
-                // Честные мягкие хитбоксы (уменьшены на 18 пикселей со всех сторон)
-                let hb = 18;
-                if(bird.x + bird.w - hb > p.x && bird.x + hb < p.x + this.w && 
-                   (bird.y + hb < p.top || bird.y + bird.h - hb > p.top + this.gap)) {
+                // Мягкие хитбоксы
+                let hb = isMobile ? 22 : 18;
+                if(bird.x + bird.w - hb > p.x && bird.x + hb < p.x + pW && 
+                   (bird.y + hb < p.top || bird.y + bird.h - hb > p.top + gapSize)) {
                     state.current = state.over;
                 }
 
-                if(p.x + this.w <= 0) {
+                if(p.x + pW <= 0) {
                     this.position.shift();
                     score.value += 1;
                     score.best = Math.max(score.value, score.best);
@@ -174,33 +209,42 @@
             ctx.strokeStyle = "#000";
             ctx.lineWidth = 6;
 
+            let fSizeReady = isMobile ? "50px" : "40px";
+            let fSizeGame = isMobile ? "80px" : "60px";
+            let fSizeOver = isMobile ? "65px" : "55px";
+
             if(state.current === state.getReady) {
-                ctx.font = "bold 40px sans-serif";
+                ctx.font = `bold ${fSizeReady} sans-serif`;
                 ctx.textAlign = "center";
                 ctx.fillText("ТАПНИ, ЧТОБЫ НАЧАТЬ", cvs.width/2, cvs.height/2 - 60);
                 ctx.strokeText("ТАПНИ, ЧТОБЫ НАЧАТЬ", cvs.width/2, cvs.height/2 - 60);
             } else if(state.current === state.game) {
-                ctx.font = "bold 60px sans-serif";
+                ctx.font =upResolution() {
+        isMobil
                 ctx.textAlign = "center";
-                ctx.fillText(this.value, cvs.width/2, 80);
-                ctx.strokeText(this.value, cvs.width/2, 80);
+                ctx.fillText(this.value, cvs.width/2, isMobile ? 120 : 80);
+                ctx.strokeText(this.value, cvs.width/2, isMobile ? 120 : 80);
             } else if(state.current === state.over) {
                 ctx.fillStyle = "rgba(0,0,0,0.75)";
                 ctx.fillRect(0, 0, cvs.width, cvs.height);
                 
                 ctx.fillStyle = "#FFF";
-                ctx.font = "bold 55px sans-serif";
+                ctx.font =мат 9:16 для мобилок
+           
                 ctx.textAlign = "center";
                 ctx.fillText("ИГРА ОКОНЧЕНА", cvs.width/2, cvs.height/2 - 80);
                 ctx.strokeText("ИГРА ОКОНЧЕНА", cvs.width/2, cvs.height/2 - 80);
                 
-                ctx.font = "bold 35px sans-serif";
+                ctx.font =nnerWidth < window.innerHeight;
+
+    function set
                 ctx.fillText("Счет: " + this.value, cvs.width/2, cvs.height/2);
-                ctx.fillText("Лучший: " + this.best, cvs.width/2, cvs.height/2 + 50);
+                ctx.fillText("Лучший: " + this.best, cvs.width/2, cvs.height/2 + 60);
                 
-                ctx.font = "bold 25px sans-serif";
+                ctx.font =-> 9:16)
+    let isMobile = window.innerWidth < w
                 ctx.fillStyle = "#f1c40f";
-                ctx.fillText("Тапни для рестарта", cvs.width/2, cvs.height/2 + 120);
+                ctx.fillText("Тапни для рестарта", cvs.width/2, cvs.height/2 + 140);
             }
         },
         
@@ -209,7 +253,12 @@
         }
     };
 
-    function loop() {
+    function loop() {// Если устройство повернули во время игры, обновляем стартовые координаты птицы
+        if ((isMobile && cvs.width === 1280) || (!isMobile && cvs.width === 720)) {
+            setupResolution();
+            bird.initDimensions();
+        }
+
         if(bgImg.complete && bgImg.naturalHeight !== 0) {
             ctx.drawImage(bgImg, 0, 0, cvs.width, cvs.height);
             ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
@@ -232,6 +281,7 @@
 
     loop();
 </script>
+
 
 
 
