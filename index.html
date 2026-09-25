@@ -1,0 +1,238 @@
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    const cvs = document.getElementById("gameCanvas");
+    const ctx = cvs.getContext("2d");
+
+    // Широкое комфортное разрешение для ПК и мобилок
+    cvs.width = 1280;
+    cvs.height = 720;
+
+    const birdImg = new Image();
+    birdImg.src = "image_3.png";
+
+    const pipeImg = new Image();
+    pipeImg.src = "image_4.png";
+
+    const bgImg = new Image();
+    bgImg.src = "wedding.png";
+
+    let frames = 0;
+    
+    const state = {
+        current: 0,
+        getReady: 0,
+        game: 1,
+        over: 2
+    };
+
+    function flap() {
+        switch(state.current) {
+            case state.getReady:
+                state.current = state.game;
+                bird.flap();
+                break;
+            case state.game:
+                bird.flap();
+                break;
+            case state.over:
+                pipes.reset();
+                bird.speed = 0;
+                bird.y = cvs.height / 2;
+                score.reset();
+                state.current = state.getReady;
+                break;
+        }
+    }
+
+    cvs.addEventListener("click", flap);
+    cvs.addEventListener("touchstart", function(e) {
+        e.preventDefault();
+        flap();
+    }, { passive: false });
+
+    document.addEventListener("keydown", function(e) {
+        if(e.code === "Space" || e.code === "ArrowUp") {
+            flap();
+        }
+    });
+
+    const bird = {
+        x: 250,
+        y: cvs.height / 2,
+        w: 75,
+        h: 75,
+        gravity: 0.22,   // Очень мягкое, плавное падение
+        jump: -7.2,    // Комфортный, высокий прыжок с одного клика
+        speed: 0,
+
+        draw: function() {
+            ctx.save();
+            let angle = Math.min(Math.PI / 4, Math.max(-Math.PI / 4, (this.speed / 12)));
+            ctx.translate(this.x + this.w/2, this.y + this.h/2);
+            ctx.rotate(angle);
+
+            if(birdImg.complete && birdImg.naturalHeight !== 0) {
+                ctx.drawImage(birdImg, -this.w/2, -this.h/2, this.w, this.h);
+            } else {
+                ctx.fillStyle = "#f1c40f";
+                ctx.fillRect(-this.w/2, -this.h/2, this.w, this.h);
+            }
+            ctx.restore();
+        },
+
+        update: function() {
+            if(state.current === state.getReady) {
+                this.y = cvs.height / 2 + Math.sin(frames / 12) * 12;
+            } else {
+                this.speed += this.gravity;
+                this.y += this.speed;
+
+                if(this.y + this.h >= cvs.height) {
+                    this.y = cvs.height - this.h;
+                    state.current = state.over;
+                }
+                if(this.y <= 0) {
+                    this.y = 0;
+                    this.speed = 0;
+                }
+            }
+        },
+
+        flap: function() {
+            this.speed = this.jump; // Мгновенный отклик на клик
+        }
+    };
+
+    const pipes = {
+        position: [],
+        w: 110,        // Ширина труб
+        gap: 260,      // Большой и удобный проход между трубами
+        dx: 2.5,       // Медленная, размеренная скорость движения игры
+
+        draw: function() {
+            for(let i = 0; i < this.position.length; i++) {
+                let p = this.position[i];
+                
+                if(pipeImg.complete && pipeImg.naturalHeight !== 0) {
+                    ctx.drawImage(pipeImg, p.x, 0, this.w, p.top);
+                    ctx.drawImage(pipeImg, p.x, p.top + this.gap, this.w, cvs.height - (p.top + this.gap));
+                } else {
+                    ctx.fillStyle = "#e74c3c";
+                    ctx.fillRect(p.x, 0, this.w, p.top);
+                    ctx.fillRect(p.x, p.top + this.gap, this.w, cvs.height - (p.top + this.gap));
+                }
+            }
+        },
+
+        update: function() {
+            if(state.current !== state.game) return;
+
+            // Трубы появляются реже, чтобы было время спокойно реагировать
+            if(frames % 170 === 0) {
+                let minTop = 80;
+                let maxTop = cvs.height - this.gap - 100;
+                let randomTop = Math.floor(Math.random() * (maxTop - minTop + 1)) + minTop;
+
+                this.position.push({
+                    x: cvs.width,
+                    top: randomTop
+                });
+            }
+
+            for(let i = 0; i < this.position.length; i++) {
+                let p = this.position[i];
+                p.x -= this.dx;
+                
+                // Честные мягкие хитбоксы (уменьшены на 18 пикселей со всех сторон)
+                let hb = 18;
+                if(bird.x + bird.w - hb > p.x && bird.x + hb < p.x + this.w && 
+                   (bird.y + hb < p.top || bird.y + bird.h - hb > p.top + this.gap)) {
+                    state.current = state.over;
+                }
+
+                if(p.x + this.w <= 0) {
+                    this.position.shift();
+                    score.value += 1;
+                    score.best = Math.max(score.value, score.best);
+                    i--;
+                }
+            }
+        },
+        
+        reset: function() {
+            this.position = [];
+        }
+    };
+
+    const score = {
+        best: 0,
+        value: 0,
+        
+        draw: function() {
+            ctx.fillStyle = "#FFF";
+            ctx.strokeStyle = "#000";
+            ctx.lineWidth = 6;
+
+            if(state.current === state.getReady) {
+                ctx.font = "bold 40px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("ТАПНИ, ЧТОБЫ НАЧАТЬ", cvs.width/2, cvs.height/2 - 60);
+                ctx.strokeText("ТАПНИ, ЧТОБЫ НАЧАТЬ", cvs.width/2, cvs.height/2 - 60);
+            } else if(state.current === state.game) {
+                ctx.font = "bold 60px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText(this.value, cvs.width/2, 80);
+                ctx.strokeText(this.value, cvs.width/2, 80);
+            } else if(state.current === state.over) {
+                ctx.fillStyle = "rgba(0,0,0,0.75)";
+                ctx.fillRect(0, 0, cvs.width, cvs.height);
+                
+                ctx.fillStyle = "#FFF";
+                ctx.font = "bold 55px sans-serif";
+                ctx.textAlign = "center";
+                ctx.fillText("ИГРА ОКОНЧЕНА", cvs.width/2, cvs.height/2 - 80);
+                ctx.strokeText("ИГРА ОКОНЧЕНА", cvs.width/2, cvs.height/2 - 80);
+                
+                ctx.font = "bold 35px sans-serif";
+                ctx.fillText("Счет: " + this.value, cvs.width/2, cvs.height/2);
+                ctx.fillText("Лучший: " + this.best, cvs.width/2, cvs.height/2 + 50);
+                
+                ctx.font = "bold 25px sans-serif";
+                ctx.fillStyle = "#f1c40f";
+                ctx.fillText("Тапни для рестарта", cvs.width/2, cvs.height/2 + 120);
+            }
+        },
+        
+        reset: function() {
+            this.value = 0;
+        }
+    };
+
+    function loop() {
+        if(bgImg.complete && bgImg.naturalHeight !== 0) {
+            ctx.drawImage(bgImg, 0, 0, cvs.width, cvs.height);
+            ctx.fillStyle = "rgba(0, 0, 0, 0.35)";
+            ctx.fillRect(0, 0, cvs.width, cvs.height);
+        } else {
+            ctx.fillStyle = "#2c3e50";
+            ctx.fillRect(0, 0, cvs.width, cvs.height);
+        }
+
+        bird.update();
+        pipes.update();
+        
+        pipes.draw();
+        bird.draw();
+        score.draw();
+
+        frames++;
+        requestAnimationFrame(loop);
+    }
+
+    loop();
+</script>
+
+
+
+
